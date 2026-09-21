@@ -1,8 +1,25 @@
+const fs = require("fs");
+const path = require("path");
 const mysql = require("mysql2/promise");
 
-// On Vercel each serverless invocation can spin up its own process, so we
-// keep the pool small and reuse it across warm invocations via a module-level
-// singleton (Node caches required modules between warm invocations).
+function resolveSsl() {
+    if (process.env.DB_SSL !== "true") return undefined;
+
+    // On Vercel we can't ship the certs/ folder (it's gitignored), so the CA
+    // cert is passed in as an environment variable instead.
+    if (process.env.DB_CA_CERT) {
+        return { ca: process.env.DB_CA_CERT, rejectUnauthorized: true };
+    }
+
+    // Locally, read it from the certs/ folder
+    const caPath = path.join(__dirname, "..", "certs", "ca.pem");
+    if (fs.existsSync(caPath)) {
+        return { ca: fs.readFileSync(caPath, "utf8"), rejectUnauthorized: true };
+    }
+
+    return { rejectUnauthorized: true };
+}
+
 const pool = mysql.createPool({
     host: process.env.DB_HOST,
     port: Number(process.env.DB_PORT) || 3306,
@@ -12,7 +29,7 @@ const pool = mysql.createPool({
     waitForConnections: true,
     connectionLimit: process.env.VERCEL ? 1 : 10,
     queueLimit: 0,
-    ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: true } : undefined,
+    ssl: resolveSsl(),
 });
 
 module.exports = pool;
